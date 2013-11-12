@@ -128,6 +128,11 @@ static int comb_nelt = 1;
 static int comb_config[1] =
   { /* meta_table_size */1024 };
 
+/* tournament predictor config (<sel_size> <global_regsize> <local_htb_size> <local_hrsize> <optional>) */
+static int tournament_nelt = 5;
+static int tournament_config[5] =
+  { /*sel_size*/4096, /*global_regsize*/12, /*local_htb_size*/1024, /*local_hrsize*/10, /*optional*/0};
+
 /* return address stack (RAS) size */
 static int ras_size = 8;
 
@@ -650,7 +655,7 @@ sim_reg_options(struct opt_odb_t *odb)
                );
 
   opt_reg_string(odb, "-bpred",
-		 "branch predictor type {nottaken|taken|perfect|bimod|2lev|comb}",
+		 "branch predictor type {nottaken|taken|perfect|bimod|2lev|comb|tournament}",
                  &pred_type, /* default */"bimod",
                  /* print */TRUE, /* format */NULL);
 
@@ -672,6 +677,13 @@ sim_reg_options(struct opt_odb_t *odb)
 		   comb_config, comb_nelt, &comb_nelt,
 		   /* default */comb_config,
 		   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
+
+  opt_reg_int_list(odb, "-bpred:tournament",
+                   "tournament predictor config "
+		   "(<sel_size> <gloabl_regsize> <local_htb_size> <local_hr_size> <optional>)",
+                   tournament_config, tournament_nelt, &tournament_nelt,
+		   /* default */tournament_config,
+                   /* print */TRUE, /* format */NULL, /* !accrue */FALSE);
 
   opt_reg_int(odb, "-bpred:ras",
               "return address stack size (0 for no return stack)",
@@ -937,7 +949,7 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
 	fatal("bad 2-level pred config (<l1size> <l2size> <hist_size> <xor>)");
       if (btb_nelt != 2)
 	fatal("bad btb config (<num_sets> <associativity>)");
-
+      
       pred = bpred_create(BPred2Level,
 			  /* bimod table size */0,
 			  /* 2lev l1 size */twolev_config[0],
@@ -946,6 +958,24 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
 			  /* history reg size */twolev_config[2],
 			  /* history xor address */twolev_config[3],
 			  /* btb sets */btb_config[0],
+			  /* btb assoc */btb_config[1],
+			  /* ret-addr stack size */ras_size);
+    }
+  else if (!mystricmp(pred_type, "tournament"))
+    {
+      /* tournament predictor, bpred_create() checks args */
+      if (tournament_nelt != 5)
+	fatal("bad tournament pred config (<sel_size> <global_regsize> <local_htb_size> <local_hr_size> <optional>)");
+      if (btb_nelt != 2)
+	fatal("bad btb config (<num_sets> <associativity>)");
+      
+      pred = bpred_create_tournament(
+			  /* sel_size */tournament_config[0],
+			  /* global_regsize */tournament_config[1],
+			  /* local_htb_size */tournament_config[2],
+			  /* local_hr_size */tournament_config[3],
+			  /* optional */tournament_config[4],
+           /* btb sets */btb_config[0],
 			  /* btb assoc */btb_config[1],
 			  /* ret-addr stack size */ras_size);
     }
