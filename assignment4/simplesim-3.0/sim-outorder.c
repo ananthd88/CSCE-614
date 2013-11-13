@@ -968,16 +968,28 @@ sim_check_options(struct opt_odb_t *odb,        /* options database */
 	fatal("bad tournament pred config (<sel_size> <global_regsize> <local_htb_size> <local_hr_size> <optional>)");
       if (btb_nelt != 2)
 	fatal("bad btb config (<num_sets> <associativity>)");
-      
+      /*
+      pred = bpred_create(BPred2Level,
+			  0,
+			  1,
+			  512,
+			  0,
+			  9,
+			  0,
+			  btb_config[0],
+			  btb_config[1],
+			  ras_size);
+      /*/
       pred = bpred_create_tournament(
-			  /* sel_size */tournament_config[0],
-			  /* global_regsize */tournament_config[1],
-			  /* local_htb_size */tournament_config[2],
-			  /* local_hr_size */tournament_config[3],
-			  /* optional */tournament_config[4],
-           /* btb sets */btb_config[0],
-			  /* btb assoc */btb_config[1],
-			  /* ret-addr stack size */ras_size);
+            tournament_config[0],
+			   tournament_config[1],
+			   tournament_config[2],
+			   tournament_config[3],
+			   tournament_config[4],
+            btb_config[0],
+			   btb_config[1],
+			   ras_size);
+      
     }
   else if (!mystricmp(pred_type, "comb"))
     {

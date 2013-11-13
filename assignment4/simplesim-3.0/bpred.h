@@ -176,7 +176,7 @@ struct bpred_t {
   /* TODO: Modify code where the similar variables 'used_bimod' & 'used_2lev' appear */
   counter_t used_tglobal;	/* num global predictions used (BPredTournament) */
   counter_t used_tlocal;   /* num local predictions used (BPredTournament) */
-  
+
   counter_t jr_hits;		/* num correct addr-predictions for JR's */
   counter_t jr_seen;		/* num JR's seen */
   counter_t jr_non_ras_hits;	/* num correct addr-preds for non-RAS JR's */

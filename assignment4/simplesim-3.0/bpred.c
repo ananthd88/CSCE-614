@@ -58,7 +58,7 @@
 #include "misc.h"
 #include "machine.h"
 #include "bpred.h"
-
+                    
 /* turn this on to enable the SimpleScalar 2.0 RAS bug */
 /* #define RAS_BUG_COMPATIBLE */
 
@@ -209,7 +209,8 @@ bpred_create_tournament(
   pred->dirpred.tournament->config.tournament.optional = optional;
     
   /* Allocate space for selectors, and initialize every selector to 00 */
-  if (!(pred->dirpred.tournament->config.tournament.selectors = calloc(sel_size, sizeof(struct bpred_dir_t))))
+  /*if (!(pred->dirpred.tournament->config.tournament.selectors = calloc(sel_size, sizeof(struct bpred_dir_t))))*/
+  if (!(pred->dirpred.tournament->config.tournament.selectors = (char *) calloc(sel_size, sizeof(char))))
     fatal("out of virtual memory");
   
   /* Create the global predictor */  
@@ -517,6 +518,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
     }
   if (pred->class == BPredTournament)
     {
+
       sprintf(buf, "%s.used_tglobal", name);
       stat_reg_counter(sdb, buf, 
 		       "total number of (tournament) global predictions used", 
@@ -525,6 +527,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
       stat_reg_counter(sdb, buf, 
 		       "total number of (tournament) lcoal predictions used", 
 		       &pred->used_tlocal, 0, NULL);
+
     }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
@@ -599,8 +602,10 @@ bpred_after_priming(struct bpred_t *bpred)
   bpred->used_ras = 0;
   bpred->used_bimod = 0;
   bpred->used_2lev = 0;
+
   bpred->used_tglobal = 0;
   bpred->used_tlocal = 0;
+
   bpred->jr_hits = 0;
   bpred->jr_seen = 0;
   bpred->misses = 0;
@@ -667,10 +672,11 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
       int selindex;
       selindex = ((1 << pred_dir->config.tournament.sel_size) - 1) & baddr;
       p = pred_dir->config.tournament.selectors + selindex;
+    }
+    break;
     default:
       panic("bogus branch direction predictor class");
-    }
-  }
+    }  
   return (char *)p;
 }
 
@@ -963,10 +969,12 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     {
       if(pred->class == BPredTournament)
       {   
+
          if(dir_update_ptr->dir.tselector)
             pred->used_tlocal++;
          else
             pred->used_tglobal++;
+
       }
       /* TODO:SHould this block be enclosed in another if block which checks the predictor type? */
       if (dir_update_ptr->dir.meta)
