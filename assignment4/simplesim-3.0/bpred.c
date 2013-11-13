@@ -176,6 +176,90 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
   return pred;
 }
 
+/* create a branch predictor */
+struct bpred_t *			/* branch predictory instance */
+bpred_create_tournament(
+	     unsigned int sel_size,	/* selector table size */
+	     unsigned int global_regsize,	/* global branch history register size */
+	     unsigned int local_htb_size,	/* local branch history table size */
+	     unsigned int local_hr_size,    /* local branch history register size */
+	     unsigned int optional,         /* optional flag */
+	     unsigned int btb_sets,	/* number of sets in BTB */ 
+	     unsigned int btb_assoc,	/* BTB associativity */
+	     unsigned int retstack_size) /* num entries in ret-addr stack */
+{
+  struct bpred_t *pred;
+  
+  if (!(pred = calloc(1, sizeof(struct bpred_t))))
+    fatal("out of virtual memory");
+
+  pred->class = BPredTournament;
+  
+  /* Initialize the branch direction predictor (tournament predictor) */
+  if (!(pred->dirpred.tournament = calloc(1, sizeof(struct bpred_dir_t))))
+    fatal("out of virtual memory");
+  
+  pred->dirpred.tournament->class = BPredTournament;
+  
+  /* Initialize parameters of the tournament predictor */
+  pred->dirpred.tournament->config.tournament.sel_size = sel_size;
+  pred->dirpred.tournament->config.tournament.global_regsize = global_regsize;
+  pred->dirpred.tournament->config.tournament.local_htb_size = local_htb_size;
+  pred->dirpred.tournament->config.tournament.local_hr_size = local_hr_size;
+  pred->dirpred.tournament->config.tournament.optional = optional;
+    
+  /* Allocate space for selectors, and initialize every selector to 00 */
+  if (!(pred->dirpred.tournament->config.tournament.selectors = calloc(sel_size, sizeof(struct bpred_dir_t))))
+    fatal("out of virtual memory");
+  
+  /* Create the global predictor */  
+  pred->dirpred.tournament->config.tournament.global = bpred_dir_create(BPred2Level, 1, (unsigned int)(1 << global_regsize), global_regsize, 0);
+  
+  /* Create the local predictor */  
+  pred->dirpred.tournament->config.tournament.local = bpred_dir_create(BPred2Level, local_htb_size, (unsigned int)(1 << local_hr_size), local_hr_size, 0);
+  
+  /* allocate ret-addr stack */
+  int i;
+
+  /* allocate BTB */
+  if (!btb_sets || (btb_sets & (btb_sets-1)) != 0)
+    fatal("number of BTB sets must be non-zero and a power of two");
+  if (!btb_assoc || (btb_assoc & (btb_assoc-1)) != 0)
+    fatal("BTB associativity must be non-zero and a power of two");
+
+  if (!(pred->btb.btb_data = calloc(btb_sets * btb_assoc,
+				sizeof(struct bpred_btb_ent_t))))
+    fatal("cannot allocate BTB");
+
+  pred->btb.sets = btb_sets;
+  pred->btb.assoc = btb_assoc;
+
+  if (pred->btb.assoc > 1)
+    for (i=0; i < (pred->btb.assoc*pred->btb.sets); i++)
+    {
+      if (i % pred->btb.assoc != pred->btb.assoc - 1)
+         pred->btb.btb_data[i].next = &pred->btb.btb_data[i+1];
+      else
+         pred->btb.btb_data[i].next = NULL;
+    
+      if (i % pred->btb.assoc != pred->btb.assoc - 1)
+         pred->btb.btb_data[i+1].prev = &pred->btb.btb_data[i];
+    }
+
+  /* allocate retstack */
+  if ((retstack_size & (retstack_size-1)) != 0)
+    fatal("Return-address-stack size must be zero or a power of two");
+   
+  pred->retstack.size = retstack_size;
+  if (retstack_size)
+    if (!(pred->retstack.stack = calloc(retstack_size, 
+				    sizeof(struct bpred_btb_ent_t))))
+      fatal("cannot allocate return-address-stack");
+  pred->retstack.tos = retstack_size - 1;
+
+  return pred;
+}
+
 /* create a branch direction predictor */
 struct bpred_dir_t *		/* branch direction predictor instance */
 bpred_dir_create (
@@ -290,7 +374,27 @@ bpred_dir_config(
   case BPredNotTaken:
     fprintf(stream, "pred_dir: %s: predict not taken\n", name);
     break;
-
+  
+  /* TODO: Added case for tournament predictor, now change functions that call this (name variable) */
+  case BPredTournament:
+    fprintf(stream,
+      "pred_dir: %s, sel_size: %d, global_regsize: %d, local_htb_size: %d, local_hr_size: %d, optional: %d, direct-mapped\n",
+      name, 
+      pred_dir->config.tournament.sel_size, 
+      pred_dir->config.tournament.global_regsize, 
+      pred_dir->config.tournament.local_htb_size,
+      pred_dir->config.tournament.local_hr_size, 
+      pred_dir->config.tournament.optional);
+    bpred_dir_config(
+      pred_dir->config.tournament.global,	/* The global branch direction predictor */
+      "tournament-global",			/* predictor name */
+      stream);			/* output stream */
+    bpred_dir_config(
+      pred_dir->config.tournament.local,	/* The local branch direction predictor */
+      "tournament-local",			/* predictor name */
+      stream);			/* output stream */
+    break;
+    
   default:
     panic("bogus branch direction predictor class");
   }
@@ -331,7 +435,13 @@ bpred_config(struct bpred_t *pred,	/* branch predictor instance */
   case BPredNotTaken:
     bpred_dir_config (pred->dirpred.bimod, "nottaken", stream);
     break;
-
+  case BPredTournament:
+    bpred_dir_config (pred->dirpred.tournament, "tournament", stream);
+    fprintf(stream, "btb: %d sets x %d associativity", 
+	    pred->btb.sets, pred->btb.assoc);
+    fprintf(stream, "ret_stack: %d entries", pred->retstack.size);
+    break;
+  
   default:
     panic("bogus branch predictor class");
   }
@@ -373,6 +483,9 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
     case BPredNotTaken:
       name = "bpred_nottaken";
       break;
+    case BPredTournament:
+      name = "bpred_tournament";
+      break;
     default:
       panic("bogus branch predictor class");
     }
@@ -401,6 +514,17 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
       stat_reg_counter(sdb, buf, 
 		       "total number of 2-level predictions used", 
 		       &pred->used_2lev, 0, NULL);
+    }
+  if (pred->class == BPredTournament)
+    {
+      sprintf(buf, "%s.used_tglobal", name);
+      stat_reg_counter(sdb, buf, 
+		       "total number of (tournament) global predictions used", 
+		       &pred->used_tglobal, 0, NULL);
+      sprintf(buf, "%s.used_tlocal", name);
+      stat_reg_counter(sdb, buf, 
+		       "total number of (tournament) lcoal predictions used", 
+		       &pred->used_tlocal, 0, NULL);
     }
   sprintf(buf, "%s.misses", name);
   stat_reg_counter(sdb, buf, "total number of misses", &pred->misses, 0, NULL);
@@ -475,6 +599,8 @@ bpred_after_priming(struct bpred_t *bpred)
   bpred->used_ras = 0;
   bpred->used_bimod = 0;
   bpred->used_2lev = 0;
+  bpred->used_tglobal = 0;
+  bpred->used_tlocal = 0;
   bpred->jr_hits = 0;
   bpred->jr_seen = 0;
   bpred->misses = 0;
@@ -536,10 +662,15 @@ bpred_dir_lookup(struct bpred_dir_t *pred_dir,	/* branch dir predictor inst */
     case BPredTaken:
     case BPredNotTaken:
       break;
+    case BPredTournament:
+    {  
+      int selindex;
+      selindex = ((1 << pred_dir->config.tournament.sel_size) - 1) & baddr;
+      p = pred_dir->config.tournament.selectors + selindex;
     default:
       panic("bogus branch direction predictor class");
     }
-
+  }
   return (char *)p;
 }
 
@@ -627,6 +758,38 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
 	{
 	  return btarget;
 	}
+    case BPredTournament:
+      if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND))
+	{
+	  char *tselector, *tglobal, *tlocal;
+	  
+	  tselector = bpred_dir_lookup (pred->dirpred.tournament, baddr);
+	  tglobal = bpred_dir_lookup (pred->dirpred.tournament->config.tournament.global, baddr);
+	  tlocal = bpred_dir_lookup (pred->dirpred.tournament->config.tournament.local, baddr);
+	  
+	  dir_update_ptr->ptselector = tselector;
+	  dir_update_ptr->ptglobal = tglobal;
+	  dir_update_ptr->ptlocal = tlocal;
+	  
+	  dir_update_ptr->dir.tselector  = (*tselector >= 2);
+	  dir_update_ptr->dir.tglobal  = (*tglobal >= 2);
+	  dir_update_ptr->dir.tlocal  = (*tlocal >= 4);
+	  
+	  if(dir_update_ptr->dir.tselector)
+	  {
+	      /* TODO: Verify that this is necessary */
+	      /*dir_update_ptr->pdir1 = tlocal;*/
+	      dir_update_ptr->dir.tournament = dir_update_ptr->dir.tlocal;
+	  }
+	  else
+	  {
+	      /* TODO: Verify that this is necessary */
+	      /*dir_update_ptr->pdir1 = tglobal;*/
+	      dir_update_ptr->dir.tournament = dir_update_ptr->dir.tglobal;
+	  }
+	}
+      break;
+    
     default:
       panic("bogus predictor class");
   }
@@ -700,6 +863,27 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
     }
 
   /* otherwise we have a conditional branch */
+  
+  /* If the predictor is a tournament predictor */
+  if(pred->class == BPredTournament)
+  {
+      if (pbtb == NULL)
+      {
+         /* BTB miss -- just return a predicted direction */
+         return (dir_update_ptr->dir.tournament
+            ? /* taken */ 1
+            : /* not taken */ 0);
+       }
+     else
+       {
+         /* BTB hit, so return target if it's a predicted-taken branch */
+         return (dir_update_ptr->dir.tournament
+	         ? /* taken */ pbtb->target
+	         : /* not taken */ 0);
+       }
+  }
+  
+  /* Control will reach here only if the predictor is not a tournament predictor */
   if (pbtb == NULL)
     {
       /* BTB miss -- just return a predicted direction */
@@ -777,6 +961,14 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     }
   else if ((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND))
     {
+      if(pred->class == BPredTournament)
+      {   
+         if(dir_update_ptr->dir.tselector)
+            pred->used_tlocal++;
+         else
+            pred->used_tglobal++;
+      }
+      /* TODO:SHould this block be enclosed in another if block which checks the predictor type? */
       if (dir_update_ptr->dir.meta)
 	pred->used_2lev++;
       else
@@ -840,6 +1032,92 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	shift_reg & ((1 << pred->dirpred.twolev->config.two.shift_width) - 1);
     }
 
+  /* Update the corresponding history registers appropriately if BPredTournament */
+  if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND) &&
+      (pred->class == BPredTournament))
+  {
+      int l1index, shift_reg, globalCorrect;
+      
+      /* Update global history register */
+      l1index =
+	      (baddr >> MD_BR_SHIFT) & (pred->dirpred.tournament->config.tournament.global->config.two.l1size - 1);
+      shift_reg =
+         (pred->dirpred.tournament->config.tournament.global->config.two.shiftregs[l1index] << 1) | (!!taken);
+      pred->dirpred.tournament->config.tournament.global->config.two.shiftregs[l1index] =
+         shift_reg & ((1 << pred->dirpred.tournament->config.tournament.global->config.two.shift_width) - 1);
+
+      /* Update local history register */
+      l1index =
+	      (baddr >> MD_BR_SHIFT) & (pred->dirpred.tournament->config.tournament.local->config.two.l1size - 1);
+      shift_reg =
+         (pred->dirpred.tournament->config.tournament.local->config.two.shiftregs[l1index] << 1) | (!!taken);
+      pred->dirpred.tournament->config.tournament.local->config.two.shiftregs[l1index] =
+         shift_reg & ((1 << pred->dirpred.tournament->config.tournament.local->config.two.shift_width) - 1);
+    
+      /* Update the state of the selector */
+      if(dir_update_ptr->dir.tglobal != dir_update_ptr->dir.tlocal)
+      {  
+         /* If global prediction and local predictions differ */
+         if(taken)
+         {   /* If the branch was taken */
+            if(dir_update_ptr->dir.tglobal)
+            {
+               /* If global prediction was correct */
+               if(*dir_update_ptr->ptselector > 0)
+                  --*dir_update_ptr->ptselector;
+            } else {
+               /* If local prediction was correct */
+               if(*dir_update_ptr->ptselector < 3)
+                  ++*dir_update_ptr->ptselector;
+            }
+         }
+         else
+         {
+            /* If the branch was not taken */
+            if(!dir_update_ptr->dir.tglobal)
+            {
+               /* If global prediction was correct */
+               if(*dir_update_ptr->ptselector > 0)
+                  --*dir_update_ptr->ptselector;
+            } else {
+               /* If local prediction was correct */
+               if(*dir_update_ptr->ptselector < 3)
+                  ++*dir_update_ptr->ptselector;
+            }
+         }
+      }
+      
+      /* Update state of the counters for both global predictor & local predictor */
+      if(taken)
+      {
+         /* If the branch was taken */
+         if(*dir_update_ptr->ptglobal < 3)
+            ++*dir_update_ptr->ptglobal;
+         if( 
+            !( 
+               !dir_update_ptr->dir.tselector && /* Global predictor was chosen */
+               dir_update_ptr->dir.tglobal == !!taken && /* Global predictor was correct */
+               pred->dirpred.tournament->config.tournament.optional  /* 'optional' flag is set */
+             ) &&
+             *dir_update_ptr->ptlocal < 3)
+            ++*dir_update_ptr->ptlocal;
+      }
+      else
+      {
+         /* If the branch was not taken */
+         if(*dir_update_ptr->ptglobal > 0)
+                  --*dir_update_ptr->ptglobal;
+         if( 
+            !( 
+               !dir_update_ptr->dir.tselector && /* Global predictor was chosen */
+               dir_update_ptr->dir.tglobal == !!taken && /* Global predictor was correct */
+               pred->dirpred.tournament->config.tournament.optional  /* 'optional' flag is set */
+             ) &&
+             *dir_update_ptr->ptlocal < 3)
+            --*dir_update_ptr->ptlocal;
+      }
+  }
+  
   /* find BTB entry if it's a taken branch (don't allocate for non-taken) */
   if (taken)
     {
@@ -962,7 +1240,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
 	    }
 	}
     }
-
+  
   /* update BTB (but only for taken branches) */
   if (pbtb)
     {

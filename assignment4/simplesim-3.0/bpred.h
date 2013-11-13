@@ -104,7 +104,8 @@ enum bpred_class {
   BPred2bit,			/* 2-bit saturating cntr pred (dir mapped) */
   BPredTaken,			/* static predict taken */
   BPredNotTaken,		/* static predict not taken */
-  BPred_NUM
+  BPred_NUM,
+  BPredTournament    /* Tournament predictor */
 };
 
 /* an entry in a BTB */
@@ -131,6 +132,16 @@ struct bpred_dir_t {
       int *shiftregs;		/* level-1 history table */
       unsigned char *l2table;	/* level-2 prediction state table */
     } two;
+    struct {
+      unsigned int sel_size;	/* selector table size */
+      unsigned int global_regsize;	/* global branch history register size */
+	   unsigned int local_htb_size;	/* local branch history table size */
+	   unsigned int local_hr_size;    /* local branch history register size */
+	   unsigned int optional;         /* optional flag */
+      unsigned char *selectors;
+      struct bpred_dir_t *global;
+      struct bpred_dir_t *local;
+    } tournament;
   } config;
 };
 
@@ -138,9 +149,10 @@ struct bpred_dir_t {
 struct bpred_t {
   enum bpred_class class;	/* type of predictor */
   struct {
-    struct bpred_dir_t *bimod;	  /* first direction predictor */
-    struct bpred_dir_t *twolev;	  /* second direction predictor */
-    struct bpred_dir_t *meta;	  /* meta predictor */
+    struct bpred_dir_t *bimod;	   /* first direction predictor */
+    struct bpred_dir_t *twolev;	   /* second direction predictor */
+    struct bpred_dir_t *meta;	      /* meta predictor */
+    struct bpred_dir_t *tournament;	/* tournament predictor */
   } dirpred;
 
   struct {
@@ -161,6 +173,10 @@ struct bpred_t {
   counter_t used_ras;		/* num RAS predictions used */
   counter_t used_bimod;		/* num bimodal predictions used (BPredComb) */
   counter_t used_2lev;		/* num 2-level predictions used (BPredComb) */
+  /* TODO: Modify code where the similar variables 'used_bimod' & 'used_2lev' appear */
+  counter_t used_tglobal;	/* num global predictions used (BPredTournament) */
+  counter_t used_tlocal;   /* num local predictions used (BPredTournament) */
+  
   counter_t jr_hits;		/* num correct addr-predictions for JR's */
   counter_t jr_seen;		/* num JR's seen */
   counter_t jr_non_ras_hits;	/* num correct addr-preds for non-RAS JR's */
@@ -178,11 +194,18 @@ struct bpred_update_t {
   char *pdir1;		/* direction-1 predictor counter */
   char *pdir2;		/* direction-2 predictor counter */
   char *pmeta;		/* meta predictor counter */
+  char *ptselector; /*Tournament Selector counter */
+  char *ptglobal;   /* Tournament Global prdictor counter */
+  char *ptlocal;    /* Tournament Local prdictor counter */
   struct {		/* predicted directions */
-    unsigned int ras    : 1;	/* RAS used */
+    unsigned int ras    : 1;	  /* RAS used */
     unsigned int bimod  : 1;    /* bimodal predictor */
     unsigned int twolev : 1;    /* 2-level predictor */
     unsigned int meta   : 1;    /* meta predictor (0..bimod / 1..2lev) */
+    unsigned int tselector: 1;  /* Tournament Selection */
+    unsigned int tglobal: 1;    /* Tournament Global prediction */
+    unsigned int tlocal : 1;    /* Tournament Local prediction */
+    unsigned int tournament: 1; /* Final Tournament prediction */
   } dir;
 };
 
@@ -198,6 +221,18 @@ bpred_create(enum bpred_class class,	/* type of predictor to create */
 	     unsigned int btb_sets,	/* number of sets in BTB */ 
 	     unsigned int btb_assoc,	/* BTB associativity */
 	     unsigned int retstack_size);/* num entries in ret-addr stack */
+
+/* create a branch predictor */
+struct bpred_t *			/* branch predictory instance */
+bpred_create_tournament(
+	     unsigned int sel_size,	/* selector table size */
+	     unsigned int global_regsize,	/* global branch history register size */
+	     unsigned int local_htb_size,	/* local branch history table size */
+	     unsigned int local_hr_size,    /* local branch history register size */
+	     unsigned int optional,         /* optional flag */
+	     unsigned int btb_sets,	/* number of sets in BTB */ 
+	     unsigned int btb_assoc,	/* BTB associativity */
+	     unsigned int retstack_size); /* num entries in ret-addr stack */
 
 /* create a branch direction predictor */
 struct bpred_dir_t *		/* branch direction predictor instance */
