@@ -17,8 +17,8 @@ if [ ! -f RUN$1 ]; then
    exit;
 fi
 
-OUTPUTDIR="../../assignment4/output/$1/";
-rm -rf $OUTPUTDIR/*;
+OUTPUTDIR="../../assignment4/output/$1";
+#rm -rf $OUTPUTDIR/*;
 
 l1sizes=( 1 1 8 8);
 l2sizes=( 512 512 512 512);
@@ -31,8 +31,8 @@ do
    echo "l1size               = ${l1sizes[$i]}";
    echo "l2size               = ${l2sizes[$i]}";
    echo "shift register width = ${widths[$i]}";
-   echo "./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_${l1sizes[$i]}_${l2sizes[$i]}_${widths[$i]} -bpred 2lev -bpred:2lev ${l1sizes[$i]} ${l2sizes[$i]} ${widths[$i]} 0 -bpred:ras 8 -bpred:btb 64 2";
-   ./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_${l1sizes[$i]}_${l2sizes[$i]}_${widths[$i]} -bpred 2lev -bpred:2lev ${l1sizes[$i]} ${l2sizes[$i]} ${widths[$i]} 0 -bpred:ras 8 -bpred:btb 64 2
+   echo "./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_2lev_${l1sizes[$i]}_${l2sizes[$i]}_${widths[$i]} -bpred 2lev -bpred:2lev ${l1sizes[$i]} ${l2sizes[$i]} ${widths[$i]} 0 -bpred:ras 8 -bpred:btb 64 2";
+   ./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_2lev_${l1sizes[$i]}_${l2sizes[$i]}_${widths[$i]} -bpred 2lev -bpred:2lev ${l1sizes[$i]} ${l2sizes[$i]} ${widths[$i]} 0 -bpred:ras 8 -bpred:btb 64 2
    echo "Done";
    echo;
 done

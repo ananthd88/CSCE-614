@@ -174,6 +174,7 @@ struct bpred_t {
   counter_t used_bimod;		/* num bimodal predictions used (BPredComb) */
   counter_t used_2lev;		/* num 2-level predictions used (BPredComb) */
   /* TODO: Modify code where the similar variables 'used_bimod' & 'used_2lev' appear */
+  counter_t used_predictions; /* Actual number of times a predictor was used to predict branch decision */
   counter_t used_tglobal;	/* num global predictions used (BPredTournament) */
   counter_t used_tlocal;   /* num local predictions used (BPredTournament) */
 

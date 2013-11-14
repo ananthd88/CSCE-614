@@ -210,7 +210,7 @@ bpred_create_tournament(
     
   /* Allocate space for selectors, and initialize every selector to 00 */
   /*if (!(pred->dirpred.tournament->config.tournament.selectors = calloc(sel_size, sizeof(struct bpred_dir_t))))*/
-  if (!(pred->dirpred.tournament->config.tournament.selectors = (char *) calloc(sel_size, sizeof(char))))
+  if (!(pred->dirpred.tournament->config.tournament.selectors = calloc(sel_size, sizeof(char))))
     fatal("out of virtual memory");
   
   /* Create the global predictor */  
@@ -505,6 +505,14 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
 		   "total number of direction-predicted hits "
 		   "(includes addr-hits)", 
 		   &pred->dir_hits, 0, NULL);
+  
+  sprintf(buf, "%s.used_predictions", name);
+  stat_reg_counter(sdb, buf, 
+      "total number of times the branch predictor was used for conditional branches", 
+      &pred->used_predictions, 0, NULL);
+   
+   
+  
   if (pred->class == BPredComb)
     {
       sprintf(buf, "%s.used_bimod", name);
@@ -523,6 +531,7 @@ bpred_reg_stats(struct bpred_t *pred,	/* branch predictor instance */
       stat_reg_counter(sdb, buf, 
 		       "total number of (tournament) global predictions used", 
 		       &pred->used_tglobal, 0, NULL);
+      
       sprintf(buf, "%s.used_tlocal", name);
       stat_reg_counter(sdb, buf, 
 		       "total number of (tournament) lcoal predictions used", 
@@ -603,6 +612,7 @@ bpred_after_priming(struct bpred_t *bpred)
   bpred->used_bimod = 0;
   bpred->used_2lev = 0;
 
+  bpred->used_predictions = 0;
   bpred->used_tglobal = 0;
   bpred->used_tlocal = 0;
 
@@ -714,6 +724,9 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
   dir_update_ptr->pdir1 = NULL;
   dir_update_ptr->pdir2 = NULL;
   dir_update_ptr->pmeta = NULL;
+  dir_update_ptr->ptselector = NULL;
+  dir_update_ptr->ptglobal = NULL;
+  dir_update_ptr->ptlocal = NULL;
   /* Except for jumps, get a pointer to direction-prediction bits */
   switch (pred->class) {
     case BPredComb:
@@ -868,7 +881,7 @@ bpred_lookup(struct bpred_t *pred,	/* branch predictor instance */
       return (pbtb ? pbtb->target : 1);
     }
 
-  /* otherwise we have a conditional branch */
+  /* otherwise we have a conditional branch */      
   
   /* If the predictor is a tournament predictor */
   if(pred->class == BPredTournament)
@@ -954,11 +967,6 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   if (correct)
     pred->addr_hits++;
 
-  if (!!pred_taken == !!taken)
-    pred->dir_hits++;
-  else
-    pred->misses++;
-
   if (dir_update_ptr->dir.ras)
     {
       pred->used_ras++;
@@ -967,20 +975,28 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
     }
   else if ((MD_OP_FLAGS(op) & (F_CTRL|F_COND)) == (F_CTRL|F_COND))
     {
+      pred->used_predictions++; /* Total count of Hits + Misses */
+      if (!!pred_taken == !!taken)
+         pred->dir_hits++;
+      else
+         pred->misses++;
+        
       if(pred->class == BPredTournament)
       {   
 
          if(dir_update_ptr->dir.tselector)
             pred->used_tlocal++;
          else
-            pred->used_tglobal++;
-
+            pred->used_tglobal++;        
       }
-      /* TODO:SHould this block be enclosed in another if block which checks the predictor type? */
-      if (dir_update_ptr->dir.meta)
-	pred->used_2lev++;
+      /* TODO:Should this block be enclosed in another if block which checks the predictor type? */
       else
-	pred->used_bimod++;
+      {
+         if (dir_update_ptr->dir.meta)
+	         pred->used_2lev++;
+         else
+	         pred->used_bimod++;
+	   }
     }
 
   /* keep stats about JR's; also, but don't change any bpred state for JR's
@@ -1044,7 +1060,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
   if ((MD_OP_FLAGS(op) & (F_CTRL|F_UNCOND)) != (F_CTRL|F_UNCOND) &&
       (pred->class == BPredTournament))
   {
-      int l1index, shift_reg, globalCorrect;
+      int l1index, shift_reg;
       
       /* Update global history register */
       l1index =
@@ -1107,7 +1123,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
                dir_update_ptr->dir.tglobal == !!taken && /* Global predictor was correct */
                pred->dirpred.tournament->config.tournament.optional  /* 'optional' flag is set */
              ) &&
-             *dir_update_ptr->ptlocal < 3)
+             *dir_update_ptr->ptlocal < 7)
             ++*dir_update_ptr->ptlocal;
       }
       else
@@ -1121,7 +1137,7 @@ bpred_update(struct bpred_t *pred,	/* branch predictor instance */
                dir_update_ptr->dir.tglobal == !!taken && /* Global predictor was correct */
                pred->dirpred.tournament->config.tournament.optional  /* 'optional' flag is set */
              ) &&
-             *dir_update_ptr->ptlocal < 3)
+             *dir_update_ptr->ptlocal > 0)
             --*dir_update_ptr->ptlocal;
       }
   }
