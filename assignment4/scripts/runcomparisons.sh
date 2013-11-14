@@ -35,13 +35,26 @@ selsize=4096;
 globalregsize=12;
 localhtbsize=1024;
 localhrsize=10;
+
+optional=0;
 echo "Tournament Predictor -";
 echo "sel_size             = $selsize";
 echo "global_regsize       = $globalregsize";
 echo "local_htb_size       = $localhtbsize";
 echo "local_hr_size        = $localhrsize";
-echo "./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_tour_${selsize}_${globalregsize}_${localhtbsize}_${localhrsize} -bpred tournament -bpred:tournament $selsize $globalregsize $localhtbsize $localhrsize 0 -bpred:ras 8 -bpred:btb 64 2";
-./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_tour_${selsize}_${globalregsize}_${localhtbsize}_${localhrsize} -bpred tournament -bpred:tournament $selsize $globalregsize $localhtbsize $localhrsize 0 -bpred:ras 8 -bpred:btb 64 2
+echo "optional             = $optional";
+echo "./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_tour_${selsize}_${globalregsize}_${localhtbsize}_${localhrsize}_${optional} -bpred tournament -bpred:tournament $selsize $globalregsize $localhtbsize $localhrsize $optional -bpred:ras 8 -bpred:btb 64 2";
+./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_tour_${selsize}_${globalregsize}_${localhtbsize}_${localhrsize}_${optional} -bpred tournament -bpred:tournament $selsize $globalregsize $localhtbsize $localhrsize $optional -bpred:ras 8 -bpred:btb 64 2
+
+optional=1;
+echo "Tournament Predictor -";
+echo "sel_size             = $selsize";
+echo "global_regsize       = $globalregsize";
+echo "local_htb_size       = $localhtbsize";
+echo "local_hr_size        = $localhrsize";
+echo "optional             = $optional";
+echo "./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_tour_${selsize}_${globalregsize}_${localhtbsize}_${localhrsize}_${optional} -bpred tournament -bpred:tournament $selsize $globalregsize $localhtbsize $localhrsize $optional -bpred:ras 8 -bpred:btb 64 2";
+./RUN$1 ../../assignment4/simplesim-3.0/sim-outorder ../../spec2000binaries/$100.peak.ev6 -max:inst 50000000 -fastfwd 20000000 -redir:sim $OUTPUTDIR/output_tour_${selsize}_${globalregsize}_${localhtbsize}_${localhrsize}_${optional} -bpred tournament -bpred:tournament $selsize $globalregsize $localhtbsize $localhrsize $optional -bpred:ras 8 -bpred:btb 64 2
 
 date;
 exit;
