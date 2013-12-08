@@ -106,21 +106,7 @@ struct predictionTable
 {
    unsigned int numPredictors;
    char *predictors;
-   
 };
-
-void updateSignature(struct cache_blk_t *blk, unsigned int newPC);
-void clearSignature(struct cache_blk_t *blk);
-unsigned int getPrediction(unsigned int signature, struct predictionTable *dbpredTable);
-void updatePredictor(unsigned int signature, struct predictionTable *dbpredTable, unsigned int wasAccessed);
-void clearPredictor(unsigned int signature, struct predictionTable *dbpredTable);
-struct predictionTable *createPredictionTable(unsigned int numPredictors);
-
-
-
-
-
-
 
 /* highly associative caches are implemented using a hash table lookup to
    speed block access, this macro decides if a cache is "highly associative" */
@@ -228,8 +214,7 @@ struct cache_t
   counter_t replacements;	/* total number of replacements at misses */
   counter_t writebacks;		/* total number of writebacks at misses */
   counter_t invalidations;	/* total number of external invalidations */
-   counter_t dbpredHits;   /* total number of dead block predictions that were correct */
-   counter_t dbpredMisses;   /* total number of dead block predictions that were incorrect */
+   counter_t dbpredPredictions;   /* total number of dead block predictions */
    
   /* last block to hit, used to optimize cache hit processing */
   md_addr_t last_tagset;	/* tag of last line accessed */
@@ -246,6 +231,7 @@ struct cache_t
 /* create and initialize a general cache structure */
 struct cache_t *			/* pointer to cache created */
 cache_create(char *name,		/* name of the cache */
+	     unsigned int createDBPredTable, /* Whether to create the dead block prediction table */
 	     int nsets,			/* total number of sets in cache */
 	     int bsize,			/* block (line) size of cache */
 	     int balloc,		/* allocate data space for blocks? */
@@ -296,6 +282,13 @@ cache_access(struct cache_t *cp,	/* cache to access */
 	     tick_t now,		/* time of access */
 	     byte_t **udata,		/* for return of user data ptr */
 	     md_addr_t *repl_addr);	/* for address of replaced block */
+
+void updateSignature(struct cache_blk_t *blk, unsigned int newPC);
+void clearSignature(struct cache_blk_t *blk);
+unsigned int getPrediction(struct cache_t *cp, unsigned int signature);
+void updatePredictor(struct cache_t *cp, unsigned int signature, unsigned int wasAccessed);
+void clearPredictor(struct cache_t *cp, unsigned int signature);
+struct predictionTable *createPredictionTable(unsigned int numPredictors);
 
 /* cache access functions, these are safe, they check alignment and
    permissions */

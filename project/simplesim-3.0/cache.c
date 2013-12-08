@@ -259,6 +259,7 @@ update_way_list(struct cache_set_t *set,	/* set contained way chain */
 /* create and initialize a general cache structure */
 struct cache_t *			/* pointer to cache created */
 cache_create(char *name,		/* name of the cache */
+        unsigned int createDBPredTable, /* Whether to create the dead block prediction table */
 	     int nsets,			/* total number of sets in cache */
 	     int bsize,			/* block (line) size of cache */
 	     int balloc,		/* allocate data space for blocks? */
@@ -313,8 +314,14 @@ cache_create(char *name,		/* name of the cache */
 
    /* Dead block prediction */
    // TODO: Remove hard-coded value
-   cp->dbpredTable = createPredictionTable(2048)
-   
+   if(createDBPredTable)
+   {
+      cp->dbPredTable = createPredictionTable(2048);
+   }
+   else
+   {
+      cp->dbPredTable = NULL;
+   }
    
   /* miss/replacement functions */
   cp->blk_access_fn = blk_access_fn;
@@ -343,8 +350,7 @@ cache_create(char *name,		/* name of the cache */
   cp->replacements = 0;
   cp->writebacks = 0;
   cp->invalidations = 0;
-   cp->dbpredHits = 0;
-   cp->dbpredMisses = 0;
+   cp->dbpredPredictions = 0;
 
   /* blow away the last block accessed */
   cp->last_tagset = 0;
@@ -423,26 +429,35 @@ void clearSignature(struct cache_blk_t *blk)
 }
 
 /* TODO: Should this be rewritten to use only cache pointer and block number ? */
-unsigned int getPrediction(unsigned int signature, struct predictionTable *dbpredTable)
+/* TODO: Calling function should increment cp->dbpredPredictions */
+unsigned int getPrediction(struct cache_t *cp, unsigned int signature)
 {
+   struct predictionTable *dbpredTable = cp->dbPredTable;
    if(!dbpredTable)
-      fatal("invalid Dead Block Predictor Table");
+      return 0;
+      //fatal("invalid Dead Block Predictor Table");
    if(signature >= dbpredTable->numPredictors)
       fatal("invalid signature");
    
    if(signature >= dbpredTable->numPredictors)
       return -1;
-   if(dbpredTable->predictors[siganture] > 1)
-      return 1;
-   else
-      return 0;
+   else 
+   {
+      cp->dbpredPredictions++;
+      if(dbpredTable->predictors[signature] > 1)
+        return 1;
+      else
+         return 0;
+   }
 }
 
 /* TODO: Should this be rewritten to use only cache pointer and block number ? */
-void updatePredictor(unsigned int signature, struct predictionTable *dbpredTable, unsigned int wasAccessed)
+void updatePredictor(struct cache_t *cp, unsigned int signature, unsigned int wasAccessed)
 {
+   struct predictionTable *dbpredTable = cp->dbPredTable;
    if(!dbpredTable)
-      fatal("invalid Dead Block Predictor Table");
+      return;
+      //fatal("invalid Dead Block Predictor Table");
    if(signature >= dbpredTable->numPredictors)
       fatal("invalid signature");
    
@@ -454,10 +469,12 @@ void updatePredictor(unsigned int signature, struct predictionTable *dbpredTable
       return;
 }
 
-void clearPredictor(unsigned int signature, struct predictionTable *dbpredTable)
+void clearPredictor(struct cache_t *cp, unsigned int signature)
 {
+   struct predictionTable *dbpredTable = cp->dbPredTable;
    if(!dbpredTable)
-      fatal("invalid Dead Block Predictor Table");
+      return;
+      //fatal("invalid Dead Block Predictor Table");
    if(signature >= dbpredTable->numPredictors)
       fatal("invalid signature");
    dbpredTable->predictors[signature] = 0;
@@ -465,12 +482,12 @@ void clearPredictor(unsigned int signature, struct predictionTable *dbpredTable)
 
 struct predictionTable *createPredictionTable(unsigned int numPredictors)
 {
-   struct predictionTable *dbpredTable = (struct predictionTable *)calloc(1, sizeof(struct predictiontable));
-   if (!dbpredtable)
+   struct predictionTable *dbpredTable = (struct predictionTable *)calloc(1, sizeof(struct predictionTable));
+   if (!dbpredTable)
       fatal("out of virtual memory");
    dbpredTable->numPredictors = numPredictors;
    dbpredTable->predictors = (char *)calloc(numPredictors, sizeof(char));
-   if (!dbpredtable->predictors)
+   if (!dbpredTable->predictors)
       fatal("out of virtual memory");
    return dbpredTable;   
 }
@@ -533,6 +550,11 @@ cache_reg_stats(struct cache_t *cp,	/* cache instance */
   sprintf(buf, "%s.invalidations", name);
   stat_reg_counter(sdb, buf, "total number of invalidations",
 		 &cp->invalidations, 0, NULL);
+  
+  sprintf(buf, "%s.dbpredPredictions", name);
+  stat_reg_counter(sdb, buf, "total number of dead block predictions",
+		 &cp->dbpredPredictions, 0, NULL);
+  
   sprintf(buf, "%s.miss_rate", name);
   sprintf(buf1, "%s.misses / %s.accesses", name, name);
   stat_reg_formula(sdb, buf, "miss rate (i.e., misses/ref)", buf1, NULL);
@@ -612,7 +634,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
       if(pc)
       {
          updateSignature(blk, pc);
-         updatePredictor(blk->signature, cp->dbpredTable, 1);
+         updatePredictor(cp, blk->signature, 1);
       }
       goto cache_fast_hit;
     }
@@ -631,7 +653,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
 	      if(pc)
 	      {
 	         updateSignature(blk, pc);
-            updatePredictor(blk->signature, cp->dbpredTable, 1);
+            updatePredictor(cp, blk->signature, 1);
          }
          goto cache_hit;
 	  }
@@ -646,8 +668,11 @@ cache_access(struct cache_t *cp,	/* cache to access */
 	{
 	  if (blk->tag == tag && (blk->status & CACHE_BLK_VALID))
 	  {
-	      updateSignature(blk, pc);
-         updatePredictor(blk->signature, cp->dbpredTable, 1);
+         if(pc)
+         {
+            updateSignature(blk, pc);
+            updatePredictor(cp, blk->signature, 1);
+         }
          goto cache_hit;
 	  }
 	}
@@ -657,7 +682,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
 
   /* **MISS** */
   cp->misses++;
-   
+
   /* select the appropriate block to replace, and re-link this entry to
      the appropriate place in the way list */
   switch (cp->policy) {
@@ -743,7 +768,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
   if(pc)
    {
       updateSignature(repl, pc);
-      updatePredictor(repl->signature, cp->dbpredTable, 0);         
+      updatePredictor(cp, repl->signature, 0);         
    }
   /* return latency of the operation */
   return lat;
