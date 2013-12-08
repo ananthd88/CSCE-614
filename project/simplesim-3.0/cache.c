@@ -311,6 +311,11 @@ cache_create(char *name,		/* name of the cache */
   cp->policy = policy;
   cp->hit_latency = hit_latency;
 
+   /* Dead block prediction */
+   // TODO: Remove hard-coded value
+   cp->dbpredTable = createPredictionTable(2048)
+   
+   
   /* miss/replacement functions */
   cp->blk_access_fn = blk_access_fn;
 
@@ -338,6 +343,8 @@ cache_create(char *name,		/* name of the cache */
   cp->replacements = 0;
   cp->writebacks = 0;
   cp->invalidations = 0;
+   cp->dbpredHits = 0;
+   cp->dbpredMisses = 0;
 
   /* blow away the last block accessed */
   cp->last_tagset = 0;
@@ -381,6 +388,7 @@ cache_create(char *name,		/* name of the cache */
 	  blk->status = 0;
 	  blk->tag = 0;
 	  blk->ready = 0;
+     blk->signature = 0;
 	  blk->user_data = (usize != 0
 			    ? (byte_t *)calloc(usize, sizeof(byte_t)) : NULL);
 
@@ -399,6 +407,72 @@ cache_create(char *name,		/* name of the cache */
 	}
     }
   return cp;
+}
+
+
+/* Update the signature of a block given the old signature and new PC reference */
+void updateSignature(struct cache_blk_t *blk, unsigned int newPC)
+{
+   blk->signature = (blk->signature + newPC) % 2048;
+}
+
+/* Clear the signature of a block */
+void clearSignature(struct cache_blk_t *blk)
+{
+   blk->signature = 0;
+}
+
+/* TODO: Should this be rewritten to use only cache pointer and block number ? */
+unsigned int getPrediction(unsigned int signature, struct predictionTable *dbpredTable)
+{
+   if(!dbpredTable)
+      fatal("invalid Dead Block Predictor Table");
+   if(signature >= dbpredTable->numPredictors)
+      fatal("invalid signature");
+   
+   if(signature >= dbpredTable->numPredictors)
+      return -1;
+   if(dbpredTable->predictors[siganture] > 1)
+      return 1;
+   else
+      return 0;
+}
+
+/* TODO: Should this be rewritten to use only cache pointer and block number ? */
+void updatePredictor(unsigned int signature, struct predictionTable *dbpredTable, unsigned int wasAccessed)
+{
+   if(!dbpredTable)
+      fatal("invalid Dead Block Predictor Table");
+   if(signature >= dbpredTable->numPredictors)
+      fatal("invalid signature");
+   
+   if(wasAccessed && dbpredTable->predictors[signature] > 0)
+      dbpredTable->predictors[signature]--;
+   else if(!wasAccessed && dbpredTable->predictors[signature] < 3)
+      dbpredTable->predictors[signature]++;
+   else
+      return;
+}
+
+void clearPredictor(unsigned int signature, struct predictionTable *dbpredTable)
+{
+   if(!dbpredTable)
+      fatal("invalid Dead Block Predictor Table");
+   if(signature >= dbpredTable->numPredictors)
+      fatal("invalid signature");
+   dbpredTable->predictors[signature] = 0;
+}
+
+struct predictionTable *createPredictionTable(unsigned int numPredictors)
+{
+   struct predictionTable *dbpredTable = (struct predictionTable *)calloc(1, sizeof(struct predictiontable));
+   if (!dbpredtable)
+      fatal("out of virtual memory");
+   dbpredTable->numPredictors = numPredictors;
+   dbpredTable->predictors = (char *)calloc(numPredictors, sizeof(char));
+   if (!dbpredtable->predictors)
+      fatal("out of virtual memory");
+   return dbpredTable;   
 }
 
 /* parse policy */
@@ -499,6 +573,7 @@ cache_stats(struct cache_t *cp,		/* cache instance */
 unsigned int				/* latency of access in cycles */
 cache_access(struct cache_t *cp,	/* cache to access */
 	     enum mem_cmd cmd,		/* access type, Read or Write */
+  	     md_addr_t pc,		/* pc addressing access */
 	     md_addr_t addr,		/* address of access */
 	     void *vp,			/* ptr to buffer for input/output */
 	     int nbytes,		/* number of bytes to access */
@@ -534,6 +609,11 @@ cache_access(struct cache_t *cp,	/* cache to access */
     {
       /* hit in the same block */
       blk = cp->last_blk;
+      if(pc)
+      {
+         updateSignature(blk, pc);
+         updatePredictor(blk->signature, cp->dbpredTable, 1);
+      }
       goto cache_fast_hit;
     }
     
@@ -547,7 +627,14 @@ cache_access(struct cache_t *cp,	/* cache to access */
 	   blk=blk->hash_next)
 	{
 	  if (blk->tag == tag && (blk->status & CACHE_BLK_VALID))
-	    goto cache_hit;
+	  {
+	      if(pc)
+	      {
+	         updateSignature(blk, pc);
+            updatePredictor(blk->signature, cp->dbpredTable, 1);
+         }
+         goto cache_hit;
+	  }
 	}
     }
   else
@@ -558,7 +645,11 @@ cache_access(struct cache_t *cp,	/* cache to access */
 	   blk=blk->way_next)
 	{
 	  if (blk->tag == tag && (blk->status & CACHE_BLK_VALID))
-	    goto cache_hit;
+	  {
+	      updateSignature(blk, pc);
+         updatePredictor(blk->signature, cp->dbpredTable, 1);
+         goto cache_hit;
+	  }
 	}
     }
 
@@ -566,7 +657,7 @@ cache_access(struct cache_t *cp,	/* cache to access */
 
   /* **MISS** */
   cp->misses++;
-
+   
   /* select the appropriate block to replace, and re-link this entry to
      the appropriate place in the way list */
   switch (cp->policy) {
@@ -649,6 +740,11 @@ cache_access(struct cache_t *cp,	/* cache to access */
   if (cp->hsize)
     link_htab_ent(cp, &cp->sets[set], repl);
 
+  if(pc)
+   {
+      updateSignature(repl, pc);
+      updatePredictor(repl->signature, cp->dbpredTable, 0);         
+   }
   /* return latency of the operation */
   return lat;
 

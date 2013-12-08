@@ -94,6 +94,34 @@
  * reordering of requests in the memory hierarchy is not possible.
  */
 
+/* Definitions for dead block predictions - Signature table + Prediction table of saturation counters */
+//struct signatureTable
+//{
+//   unsigned int numBlocks;
+//   unsigned int *signatures;
+//   
+//};
+
+struct predictionTable
+{
+   unsigned int numPredictors;
+   char *predictors;
+   
+};
+
+void updateSignature(struct cache_blk_t *blk, unsigned int newPC);
+void clearSignature(struct cache_blk_t *blk);
+unsigned int getPrediction(unsigned int signature, struct predictionTable *dbpredTable);
+void updatePredictor(unsigned int signature, struct predictionTable *dbpredTable, unsigned int wasAccessed);
+void clearPredictor(unsigned int signature, struct predictionTable *dbpredTable);
+struct predictionTable *createPredictionTable(unsigned int numPredictors);
+
+
+
+
+
+
+
 /* highly associative caches are implemented using a hash table lookup to
    speed block access, this macro decides if a cache is "highly associative" */
 #define CACHE_HIGHLY_ASSOC(cp)	((cp)->assoc > 4)
@@ -123,6 +151,7 @@ struct cache_blk_t
   unsigned int status;		/* block status, see CACHE_BLK_* defs above */
   tick_t ready;		/* time when block will be accessible, field
 				   is set when a miss fetch is initiated */
+   unsigned int signature;
   byte_t *user_data;		/* pointer to user defined data, e.g.,
 				   pre-decode data or physical page address */
   /* DATA should be pointer-aligned due to preceeding field */
@@ -156,7 +185,8 @@ struct cache_t
   int assoc;			/* cache associativity */
   enum cache_policy policy;	/* cache replacement policy */
   unsigned int hit_latency;	/* cache hit latency */
-
+   struct predictionTable *dbPredTable;   /* Dead block prediction table */
+   
   /* miss/replacement handler, read/write BSIZE bytes starting at BADDR
      from/into cache block BLK, returns the latency of the operation
      if initiated at NOW, returned latencies indicate how long it takes
@@ -198,7 +228,9 @@ struct cache_t
   counter_t replacements;	/* total number of replacements at misses */
   counter_t writebacks;		/* total number of writebacks at misses */
   counter_t invalidations;	/* total number of external invalidations */
-
+   counter_t dbpredHits;   /* total number of dead block predictions that were correct */
+   counter_t dbpredMisses;   /* total number of dead block predictions that were incorrect */
+   
   /* last block to hit, used to optimize cache hit processing */
   md_addr_t last_tagset;	/* tag of last line accessed */
   struct cache_blk_t *last_blk;	/* cache block last accessed */
@@ -257,6 +289,7 @@ void cache_stats(struct cache_t *cp, FILE *stream);
 unsigned int				/* latency of access in cycles */
 cache_access(struct cache_t *cp,	/* cache to access */
 	     enum mem_cmd cmd,		/* access type, Read or Write */
+  	     md_addr_t pc,		/* pc addressing access */
 	     md_addr_t addr,		/* address of access */
 	     void *vp,			/* ptr to buffer for input/output */
 	     int nbytes,		/* number of bytes to access */
